@@ -6,22 +6,21 @@
  */
 namespace Magento\CatalogRuleConfigurable\Plugin\CatalogRule\Model\Indexer;
 
-use Magento\CatalogRule\Model\Indexer\Product\ProductRuleIndexer;
 use Magento\ConfigurableProduct\Model\Product\Type\Configurable;
 use Magento\CatalogRuleConfigurable\Plugin\CatalogRule\Model\ConfigurableProductsProvider;
 
 /**
- * Add configurable sub-products to reindex
+ * Class ReindexProduct. Add configurable sub-products to reindex
  */
 class ProductRuleReindex
 {
     /**
-     * @var Configurable
+     * @var \Magento\ConfigurableProduct\Model\Product\Type\Configurable
      */
     private $configurable;
 
     /**
-     * @var ConfigurableProductsProvider
+     * @var \Magento\CatalogRuleConfigurable\Plugin\CatalogRule\Model\ConfigurableProductsProvider
      */
     private $configurableProductsProvider;
 
@@ -38,47 +37,61 @@ class ProductRuleReindex
     }
 
     /**
-     * Reindex configurable product with sub-products
-     *
-     * @param ProductRuleIndexer $subject
+     * @param \Magento\CatalogRule\Model\Indexer\Product\ProductRuleIndexer $subject
      * @param \Closure $proceed
      * @param int $id
+     *
      * @return void
      */
-    public function aroundExecuteRow(ProductRuleIndexer $subject, \Closure $proceed, $id)
-    {
-        $isReindexed = false;
-
+    public function aroundExecuteRow(
+        \Magento\CatalogRule\Model\Indexer\Product\ProductRuleIndexer $subject,
+        \Closure $proceed,
+        $id
+    ) {
         $configurableProductIds = $this->configurableProductsProvider->getIds([$id]);
-        if ($configurableProductIds) {
-            $subProducts = array_values($this->configurable->getChildrenIds($id)[0]);
-            if ($subProducts) {
-                $subject->executeList(array_merge([$id], $subProducts));
-                $isReindexed = true;
-            }
-        }
-
-        if (!$isReindexed) {
+        $this->reindexSubProducts($configurableProductIds, $subject);
+        if (!$configurableProductIds) {
             $proceed($id);
         }
     }
 
     /**
-     * Add sub-products to reindex
-     *
-     * @param ProductRuleIndexer $subject
+     * @param \Magento\CatalogRule\Model\Indexer\Product\ProductRuleIndexer $subject
+     * @param \Closure $proceed
      * @param array $ids
-     * @return array
-     * @SuppressWarnings(PHPMD.UnusedFormalParameter)
+     *
+     * @return void
      */
-    public function beforeExecuteList(ProductRuleIndexer $subject, array $ids): array
-    {
+    public function aroundExecuteList(
+        \Magento\CatalogRule\Model\Indexer\Product\ProductRuleIndexer $subject,
+        \Closure $proceed,
+        array $ids
+    ) {
         $configurableProductIds = $this->configurableProductsProvider->getIds($ids);
-        if ($configurableProductIds) {
-            $subProducts = array_values($this->configurable->getChildrenIds($configurableProductIds)[0]);
-            $ids = array_unique(array_merge($ids, $subProducts));
+        $subProducts = $this->reindexSubProducts($configurableProductIds, $subject);
+        $ids = array_diff($ids, $configurableProductIds, $subProducts);
+        if ($ids) {
+            $proceed($ids);
         }
+    }
 
-        return [$ids];
+    /**
+     * @param array $configurableIds
+     * @param \Magento\CatalogRule\Model\Indexer\Product\ProductRuleIndexer $subject
+     *
+     * @return array
+     */
+    private function reindexSubProducts(
+        array $configurableIds,
+        \Magento\CatalogRule\Model\Indexer\Product\ProductRuleIndexer $subject
+    ) {
+        $subProducts = [];
+        if ($configurableIds) {
+            $subProducts = array_values($this->configurable->getChildrenIds($configurableIds)[0]);
+            if ($subProducts) {
+                $subject->executeList($subProducts);
+            }
+        }
+        return $subProducts;
     }
 }
